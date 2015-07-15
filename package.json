@@ -5,6 +5,7 @@
   "main": "index.js",
   "dependencies": {
     "adm-zip": "^0.4.7",
+    "form-data": "^1.0.0-rc1",
     "nomnom": "^1.8.1",
     "promzard": "^0.3.0",
     "read": "^1.0.6"
