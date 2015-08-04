@@ -6,7 +6,9 @@ var promzard = require('promzard');
 var path = require('path');
 var parser = require('nomnom');
 var http = require('http');
+var httpFR = require('follow-redirects').http;
 var streamToBuffer = require('stream-to-buffer');
+var unzip = require('unzip');
 
 parser.command('init')
   .callback(init)
@@ -15,6 +17,17 @@ parser.command('init')
 parser.command('publish')
   .callback(publish)
   .help('publishes a package to deepkeep');
+
+parser.command('install')
+  .callback(install)
+  .options({
+      package: {
+         position: 1,
+         help: 'package to install',
+         required: true
+      }
+   })
+  .help('installs a network locally');
 
 parser.parse();
 
@@ -52,6 +65,13 @@ function getUsernamePassword(opts) {
   });
 }
 
+function logResError(res) {
+  console.log('Http error:', res.statusCode);
+  streamToBuffer(res, function(err, body) {
+    console.log(body.toString());
+  });
+}
+
 function publish(opts) {
   var packageJson = JSON.parse(fs.readFileSync('package.json'));
   if (!packageJson.name) throw new Error('name required in package.json');
@@ -79,11 +99,7 @@ function publish(opts) {
     console.log('Uploading', packageId, 'to', reqopts.hostname + (reqopts.port !== 80 ? ':' + reqopts.port : ''));
     var req = http.request(reqopts, function(res) {
       if (res.statusCode !== 200) {
-        console.log('Failed to upload:', res.statusCode);
-        streamToBuffer(res, function(err, body) {
-          console.log(err, body.toString());
-        });
-        return;
+        return logResError(res);
       }
       console.log('Successfully uploaded package to deepkeep!');
     });
@@ -96,4 +112,23 @@ function publish(opts) {
   }).catch(function(err) {
     console.log('Failed to get username/password', err.stack);
   });
+}
+
+function install(opts) {
+  console.log('Installing ' + opts.package);
+  var reqopts = {
+    method: 'GET',
+    hostname: opts.host || 'packages.deepkeep.co',
+    port: opts.port || 80,
+    path: '/v1/' + opts.package + '/_latest/package.zip',
+  }
+  httpFR.request(reqopts, function(res) {
+    if (res.statusCode !== 200) {
+      return logResError(res);
+    }
+    res.pipe(unzip.Extract({ path: opts.package }));
+    res.on('end', function() {
+      console.log('Package successfully installed!');
+    });
+  }).end();
 }

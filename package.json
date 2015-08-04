@@ -12,10 +12,12 @@
   "dependencies": {
     "archiver": "^0.14.4",
     "es6-promisify": "^2.0.0",
+    "follow-redirects": "0.0.6",
     "nomnom": "^1.8.1",
     "promzard": "^0.3.0",
     "read": "^1.0.6",
-    "stream-to-buffer": "^0.1.0"
+    "stream-to-buffer": "^0.1.0",
+    "unzip": "^0.1.11"
   },
   "devDependencies": {},
   "author": "",
