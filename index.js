@@ -1,11 +1,12 @@
 var fs = require('fs');
-var AdmZip = require('adm-zip');
-var FormData = require('form-data');
-var read = require("read");
+var archiver = require('archiver');
+var promisify = require('es6-promisify');
+var read = promisify(require('read'));
 var promzard = require('promzard');
 var path = require('path');
-
-var parser = require("nomnom");
+var parser = require('nomnom');
+var http = require('http');
+var streamToBuffer = require('stream-to-buffer');
 
 parser.command('init')
   .callback(init)
@@ -41,46 +42,63 @@ function init(opts) {
   });
 }
 
+function getUsernamePassword(opts) {
+  var username = Promise.resolve(opts.username);
+  if (!opts.username) username = read({ prompt: 'Username: ' });
+  return username.then(function(usr) {
+    var password = Promise.resolve(opts.password);
+    if (!opts.password) password = read({ prompt: 'Password: ', silent: true });
+    return password.then(function(pass) {
+      return {
+        username: usr,
+        password: pass
+      };
+    });
+  });
+}
+
 function publish(opts) {
   var packageJson = JSON.parse(fs.readFileSync('package.json'));
   if (!packageJson.name) throw new Error('name required in package.json');
   if (!packageJson.version) throw new Error('version required in package.json');
 
-  var zip = new AdmZip();
-  zip.addLocalFile('package.json', 'package.json');
+  var archive = archiver.create('zip', {});
+  archive.append(fs.createReadStream('package.json'), { name: 'package.json' });
   if (fs.existsSync('README.md'))
-    zip.addLocalFile('README.md', 'README.md');
+    archive.append(fs.createReadStream('README.md'), { name: 'README.md' });
   if (fs.existsSync('network.t7'))
-    zip.addLocalFile('network.t7', 'network.t7');
-  var packageZip = zip.toBuffer();
+    archive.append(fs.createReadStream('network.t7'), { name: 'network.t7' });
+  archive.finalize();
 
-  read({prompt:'Username: '}, function(err, username) {
-    if (err) process.exit(1);
-    read({prompt: 'Password: ', silent: true}, function(err, password) {
-      if (err) process.exit(1);
+  getUsernamePassword(opts).then(function(auth) {
 
-      var form = new FormData();
-      form.append('package', packageZip, {
-        filename: 'package.zip',
-        contentType: 'application/octet-stream',
-        knownLength: packageZip.length
-      });
-      var formOpts = {
-        host: opts.host || 'packages.deepkeep.co',
-        port: opts.port || 80,
-        path: '/v1/upload',
-        auth: username + ':' + password
+    var packageId = auth.username + '/' + packageJson.name + '/' + packageJson.version;
+    var reqopts = {
+      method: 'PUT',
+      hostname: opts.host || 'packages.deepkeep.co',
+      port: opts.port || 80,
+      path: '/v1/' + packageId + '/package.zip',
+      auth: auth.username + ':' + auth.password
+    };
+
+    console.log('Uploading', packageId, 'to', reqopts.hostname + (reqopts.port !== 80 ? ':' + reqopts.port : ''));
+    var req = http.request(reqopts, function(res) {
+      if (res.statusCode !== 200) {
+        console.log('Failed to upload:', res.statusCode);
+        streamToBuffer(res, function(err, body) {
+          console.log(err, body.toString());
+        });
+        return;
       }
-
-      console.log('Uploading', username + '/' + packageJson.name + '/' + packageJson.version, 'to', formOpts.host + (formOpts.port != 80 ? ':' + formOpts.port : ''));
-      form.submit(formOpts, function(err, res) {
-        if (err || res.statusCode !== 200) {
-          console.log('Failed to upload package', err, res.statusMessage, res.body);
-        } else {
-          console.log('Successfully uploaded package to deepkeep!');
-        }
-        res.resume();
-      });
+      console.log('Successfully uploaded package to deepkeep!');
     });
+
+    req.on('error', function(e) {
+      console.log('Failed to upload: ' + e.message);
+    });
+
+    archive.pipe(req);
+  }).catch(function(err) {
+    console.log('Failed to get username/password', err.stack);
   });
 }
