@@ -23,7 +23,7 @@ function init(opts) {
   promzard(initDialogFile, {}, function (err, data) {
     if (err) throw new Error(err);
 
-    var packageJson = path.join(__dirname, 'package.json');
+    var packageJson = path.resolve('package.json');
     var d = JSON.stringify(data, null, 2) + '\n'
 
     console.log('About to write to %s:\n\n%s\n', packageJson, d)
@@ -31,12 +31,7 @@ function init(opts) {
       if (!ok || ok.toLowerCase().charAt(0) !== 'y') {
         console.log('Aborted.')
       } else {
-        fs.writeFile(packageJson, d, 'utf8', function (err) {
-          if (err) {
-            console.log('Failed to write package.json', err);
-            process.exit(1);
-          }
-        });
+        fs.writeFileSync(packageJson, d, 'utf8');
       }
     })
   });
